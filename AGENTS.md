@@ -11,3 +11,7 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 ## User design direction
 
 Visual fidelity and aesthetic quality are the primary acceptance criteria. Match the Feishu knowledge page using measured DOM tokens and same-viewport screenshot comparisons. Preserve its whitespace, feed density and sidebar proportions. Replace branding with TRAE and use mock community content. Do not turn the feed into a marketing landing page.
+
+## Foundation iteration
+
+Preserve visual quality. Main sections must have their own real page flows; do not represent courses/events/channels as article filters. Keep section configuration, pure domain logic, local persistence adapters, and rendering separate. Cover routing, malformed persisted data, submission validation, deletion cleanup, learning progress, and time-based event states in tests. Mock data and browser-only actions must be explicit; do not imply live registration, real video courses, or Discourse integration.

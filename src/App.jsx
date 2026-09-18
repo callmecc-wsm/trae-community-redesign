@@ -1,51 +1,112 @@
-import React, {useState,useEffect,useMemo,useRef} from 'react';
-import {articles,creators,filters,navs,matches} from './data';
-import icons from './icons.json';
-const emptyFilters = ()=>Object.fromEntries(filters.map(f=>[f.key,[]]));
-function read(key,fallback){try{return JSON.parse(localStorage.getItem('trae-community:'+key))??fallback}catch{return fallback}}
-function useSaved(key,initial){const [value,set]=useState(()=>read(key,initial));useEffect(()=>{try{localStorage.setItem('trae-community:'+key,JSON.stringify(value))}catch{}},[key,value]);return[value,set]}
-function Icon({name,className=''}){return <span aria-hidden="true" className={'icon '+className} dangerouslySetInnerHTML={{__html:icons[name]||icons.RightOutlined}}/>}
-function Avatar({author=0,size=20}){return <img className="avatar" width={size} height={size} src={'/assets/avatar-'+creators[author].avatar+'.png'} alt="" onError={e=>{e.currentTarget.onerror=null;e.currentTarget.src='/assets/trae-mark.png'}}/>}
-const cover=a=>'/assets/cover-'+a.cover+'.png';
-function Modal({title,close,children,wide=false}){
- const ref=useRef(null);
- useEffect(()=>{const previous=document.activeElement;const old=document.body.style.overflow;document.body.style.overflow='hidden';ref.current?.focus();return()=>{document.body.style.overflow=old;previous?.focus()}},[]);
- return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)close()}}><section ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} className={'modal '+(wide?'wide':'')} onKeyDown={e=>{if(e.key==='Escape')close();if(e.key==='Tab'){const els=ref.current.querySelectorAll('button,a,input,textarea,select');const first=els[0],last=els[els.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus()}}}}><header><h2>{title}</h2><button className="icon-button" onClick={close} aria-label="关闭"><Icon name="AddOutlined" className="close-icon"/></button></header>{children}</section></div>
-}
-function Composer({close,onSubmit}){
- const [draft,setDraft]=useSaved('draft',{title:'',summary:'',body:'',type:'技巧分享'});const [error,setError]=useState('');
- function submit(e){e.preventDefault();if(!draft.title.trim()||!draft.body.trim()){setError('请填写标题和正文，再提交你的分享。');return}onSubmit(draft);setDraft({title:'',summary:'',body:'',type:'技巧分享'});}
- return <Modal title="分享你的发现" close={close} wide><form className="composer" onSubmit={submit}><p className="muted">好用的技巧、有意思的作品，或一次值得记录的尝试。</p><label>标题<input maxLength={80} placeholder="给这次分享起个标题" value={draft.title} onChange={e=>setDraft({...draft,title:e.target.value})}/></label><label>发布到<select value={draft.type} onChange={e=>setDraft({...draft,type:e.target.value})}>{['技巧分享','案例与作品','互动交流','帮助与支持'].map(x=><option key={x}>{x}</option>)}</select></label><label>简介<input maxLength={160} placeholder="用一两句话介绍你的内容" value={draft.summary} onChange={e=>setDraft({...draft,summary:e.target.value})}/></label><label>正文<textarea rows={7} placeholder="从你想解决的问题开始聊聊吧……" value={draft.body} onChange={e=>setDraft({...draft,body:e.target.value})}/></label>{error&&<p role="alert" className="error">{error}</p>}<div className="composer-bottom"><span className="muted small">演示投稿仅保存在当前浏览器</span><button className="primary" type="submit">提交分享</button></div></form></Modal>
-}
-export function App(){
- const [nav,setNav]=useState('知识'),[selections,setSelections]=useState(emptyFilters),[menu,setMenu]=useState(null),[sort,setSort]=useState('最热'),[query,setQuery]=useState(''),[search,setSearch]=useState(''),[searchOpen,setSearchOpen]=useState(false),[modal,setModal]=useState(null),[toast,setToast]=useState('');
- const [liked,setLiked]=useSaved('likes',[]),[saved,setSaved]=useSaved('bookmarks',[]),[following,setFollowing]=useSaved('following',[]),[posts,setPosts]=useSaved('posts',[]),[comments,setComments]=useSaved('comments',{});
- const [route,setRoute]=useState(()=>location.hash.slice(1)),[comment,setComment]=useState('');
- const timer=useRef();const all=useMemo(()=>[...posts,...articles],[posts]);
- useEffect(()=>{const listener=()=>{setRoute(location.hash.slice(1));setMenu(null);setSearchOpen(false);setComment('');window.scrollTo(0,0)};window.addEventListener('hashchange',listener);return()=>window.removeEventListener('hashchange',listener)},[]);
- useEffect(()=>{const close=e=>{if(!e.target.closest('[data-menu]'))setMenu(null);if(!e.target.closest('.search-box'))setSearchOpen(false)};const key=e=>{if(e.key==='Escape'){setMenu(null);setSearchOpen(false)}};document.addEventListener('click',close);document.addEventListener('keydown',key);return()=>{document.removeEventListener('click',close);document.removeEventListener('keydown',key)}},[]);
- useEffect(()=>()=>clearTimeout(timer.current),[]);
- const current=route.startsWith('article/')?all.find(a=>a.id===route.slice(8)):null;
- function notify(t){setToast(t);clearTimeout(timer.current);timer.current=setTimeout(()=>setToast(''),2600)}
- function toggle(id,arr,set){set(arr.includes(id)?arr.filter(x=>x!==id):[...arr,id])}
- function home(n='知识'){setNav(n);setSearch('');setQuery('');setSelections(emptyFilters());setMenu(null);setSearchOpen(false);if(location.hash)location.hash='';else window.scrollTo({top:0,behavior:'smooth'})}
- function openArticle(a){location.hash='article/'+a.id;setSearchOpen(false)}
- function doSearch(value=query){setSearch(value.trim());setQuery(value.trim());setSearchOpen(false);setSelections(emptyFilters());setNav('知识');location.hash='';window.scrollTo(0,0)}
- function changeFilter(key,value){setSelections(s=>({...s,[key]:s[key].includes(value)?s[key].filter(x=>x!==value):[...s[key],value]}))}
- const results=all.filter(a=>matches(a,selections)&&(!search||(a.title+a.summary+a.tags.join('')).toLowerCase().includes(search.toLowerCase()))&&(nav==='AI充电站'?a.tags.includes('AI充电站')||a.tags.includes('新人必看'):nav==='作品'?a.type==='作品':nav==='活动'?a.type==='活动':nav==='课程'?a.type==='教程':nav==='频道'?a.type==='交流'||a.type==='公告':true)).sort((a,b)=>sort==='最新'?b.stamp-a.stamp:a.rank-b.rank);
- const suggestions=all.filter(a=>(a.title+a.tags.join('')).toLowerCase().includes(query.toLowerCase())).slice(0,5);
- const activeFilters=Object.values(selections).flat();
- function Actions({a}){return <div className="actions"><button className={liked.includes(a.id)?'selected':''} aria-label={'点赞 '+a.title} aria-pressed={liked.includes(a.id)} onClick={()=>toggle(a.id,liked,setLiked)}><Icon name="ThumbsupOutlined"/>{a.likes+Number(liked.includes(a.id))}</button><button className={saved.includes(a.id)?'selected':''} aria-label={'收藏 '+a.title} aria-pressed={saved.includes(a.id)} onClick={()=>toggle(a.id,saved,setSaved)}><Icon name="CollectionOutlined"/>{a.saved+Number(saved.includes(a.id))}</button><button onClick={()=>setModal({type:'share',article:a})}><Icon name="ShareOutlined"/>分享</button></div>}
- function Tag({tag}){return <button className={'tag tag-'+(tag==='新人必看'?'yellow':tag==='技巧分享'||tag==='工作提效'?'purple':tag==='案例与作品'?'orange':tag==='MCP'?'blue':'green')} onClick={()=>{setNav('知识');setSelections({...emptyFilters(),topic:[tag]});location.hash='';window.scrollTo(0,0)}}>{tag}</button>}
- function Card({a}){return <article className="article-row"><a className="cover" href={'#article/'+a.id} tabIndex={-1} aria-hidden="true"><img src={cover(a)} alt="" loading={Number(a.id)>5?'lazy':'eager'}/></a><div className="article-content"><h3><a href={'#article/'+a.id}>{a.title}</a></h3><div className="metadata"><button className="author" onClick={()=>setModal({type:'profile',author:a.author})}><Avatar author={a.author}/><span>{creators[a.author].name}</span></button><span className="meta-divider"/><span className="date">{a.date}</span><div className="tags">{a.tags.map(t=><Tag tag={t} key={t}/>)}</div></div><p className="summary">{a.summary}</p><Actions a={a}/></div></article>}
- function Sidebars(){return <aside className="sidebar"><section className="side-card"><h2>社区精华</h2><div className="ranking">{[articles[1],articles[2],articles[7],articles[4],articles[8]].map((a,i)=><a key={a.id} href={'#article/'+a.id} className="rank-row"><span className={'rank rank-'+i}>{i+1}</span><span className="rank-title">{a.title}</span><Icon name="RightOutlined"/></a>)}</div></section><section className="side-card creators"><h2>金牌创作者</h2>{creators.map((c,i)=><button key={c.name} className="creator" onClick={()=>setModal({type:'profile',author:i})}><Avatar author={i} size={32}/><span><strong>{c.name}</strong><small>收藏量：{c.saved}　获赞：{c.likes}</small></span></button>)}</section></aside>}
- return <><header className="topbar"><a className="brand" href="#" onClick={e=>{e.preventDefault();home()}} aria-label="TRAE 中文社区首页"><img src="/assets/trae-mark.png" alt="TRAE"/><strong>TRAE</strong><span className="brand-divider"/><span className="brand-community">社区</span></a><nav className="main-nav" aria-label="主导航">{navs.map(n=><button key={n} className={(nav===n?'active ':'')+(n==='AI充电站'?'ai-nav':'')} onClick={()=>home(n)}>{n}</button>)}</nav><div className="header-right"><div className={"search-box "+(searchOpen?"search-open":"")}><button className="mobile-search-button icon-button" aria-label="打开搜索" onClick={()=>setSearchOpen(!searchOpen)}><Icon name="SearchOutlined"/></button><form onSubmit={e=>{e.preventDefault();doSearch()}}><Icon name="SearchOutlined"/><input aria-label="搜索社区内容" placeholder="请输入关键词" value={query} onFocus={()=>setSearchOpen(true)} onChange={e=>{setQuery(e.target.value);setSearchOpen(true)}}/>{query&&<button type="button" className="clear-search" aria-label="清空搜索" onClick={()=>{setQuery('');setSearch('')}}><Icon name="AddOutlined" className="close-icon"/></button>}</form>{searchOpen&&query&&<div className="search-panel">{suggestions.map(a=><button key={a.id} onClick={()=>openArticle(a)}>{a.title}</button>)}{!suggestions.length&&<p>没有找到相关内容</p>}<button className="see-all" onClick={()=>doSearch()}>查看全部结果<Icon name="RightSmallCcmOutlined"/></button></div>}</div><button className="user-button" aria-label="我的收藏" onClick={()=>setModal({type:'bookmarks'})}><img src="/assets/trae-mark.png" alt=""/><span>TRAE 体验官</span></button><button data-menu className="mobile-menu-button icon-button" aria-label="打开导航" aria-expanded={menu==='mobile-nav'} onClick={()=>setMenu(menu==='mobile-nav'?null:'mobile-nav')}><Icon name="MenuOutlined"/></button><button className="primary contribute" onClick={()=>setModal({type:'compose'})}><Icon name="AddOutlined"/>投稿</button></div></header>
- <nav data-menu className={"mobile-nav "+(menu==='mobile-nav'?'visible':'')} aria-label="移动端导航">{navs.map(n=><button key={n} className={nav===n?'active':''} onClick={()=>home(n)}>{n}</button>)}</nav>
- {current?<div className="detail-layout"><div className="detail-main"><div className="breadcrumbs"><button onClick={()=>home('首页')}>首页</button><Icon name="RightSmallCcmOutlined"/><button onClick={()=>home()}>知识</button><Icon name="RightSmallCcmOutlined"/><span>{current.title}</span></div><div className="detail-banner"><img src="/assets/article-banner.png" alt=""/></div><div className="reading-layout"><nav className="reading-nav" aria-label="文章目录">{['开始之前','一个具体的实践','把任务拆小','记录与复用','一起聊聊'].map((x,i)=><a key={x} href={'#section-'+i} onClick={e=>{e.preventDefault();document.getElementById('section-'+i)?.scrollIntoView({behavior:'smooth',block:'start'})}}>{x}</a>)}</nav><article className="reading-content"><h1>{current.title}</h1><div className="reading-meta"><Avatar author={current.author}/>{creators[current.author].name}<span>·</span>{current.date}<span>·</span>约 5 分钟阅读</div><div className="detail-tags">{current.tags.map(t=><Tag tag={t} key={t}/>)}</div><p className="lead">{current.summary}</p>{current.body?<p className="user-body">{current.body}</p>:<><h2 id="section-0">开始之前</h2><p>先找一个你真的想解决的小问题。可以是经常重复的一项工作，也可以是一直想做、却没来得及开始的个人项目。目标越具体，和 AI 的协作就越容易开始。</p><blockquote>把“帮我做个应用”，换成“我希望能记录每天的任务，按日期查看，并标记完成”。</blockquote><h2 id="section-1">一个具体的实践</h2><p>这次我们从一个能完整跑通的小版本开始。先把输入、输出和使用方式说清楚，再让 TRAE 给出实现计划。不要急着一次加入所有功能，先确认核心流程成立。</p><div className="article-callout"><img src="/assets/trae-mark.png" alt=""/><div><strong>试着给 TRAE 这段任务</strong><p>先理解我的目标，列出需要确认的信息。把任务拆成可以逐步验证的小步骤，每完成一步，说明结果和下一步计划。</p></div></div><h2 id="section-2">把任务拆小</h2><ol><li>描述一个具体场景，给出已有素材和约束。</li><li>先做最小版本，确保主要流程可以运行。</li><li>对照目标检查结果，反馈具体的问题。</li><li>再补充细节，整理可以复用的经验。</li></ol><h2 id="section-3">记录与复用</h2><p>把验证有效的提示词、项目约定和踩过的坑记下来。下次遇到类似问题时，就能从已有经验继续，而不用再从零开始。</p><p>这篇内容是社区演示文章。欢迎把这里的思路换成你自己的实践，也欢迎分享不同的做法。</p></>}<section className="comments" id="section-4"><h2>一起聊聊 <span>{(comments[current.id]||[]).length}</span></h2><form onSubmit={e=>{e.preventDefault();if(!comment.trim())return;setComments({...comments,[current.id]:[...(comments[current.id]||[]),{text:comment.trim(),date:'刚刚'}]});setComment('');notify('评论已保存到本地演示')}}><textarea aria-label="写下你的想法" placeholder="你试过哪些方法？分享一下吧" value={comment} onChange={e=>setComment(e.target.value)} rows={3}/><button className="primary" disabled={!comment.trim()}>发表评论</button></form>{(comments[current.id]||[]).map((c,i)=><div className="comment" key={i}><img src="/assets/trae-mark.png" alt=""/><div><strong>TRAE 体验官 <small>{c.date}</small></strong><p>{c.text}</p></div></div>)}</section></article></div></div><aside className="detail-sidebar"><Actions a={current}/><h2>{current.title}</h2><div className="author"><Avatar author={current.author}/>{creators[current.author].name}<span className="meta-divider"/>{current.date}</div><p>{current.summary}</p><button className="primary save-large" onClick={()=>toggle(current.id,saved,setSaved)}><Icon name="CollectionOutlined"/>{saved.includes(current.id)?'已收藏':'收藏'}</button><section><h3>更多值得一读</h3>{articles.filter(a=>a.id!==current.id).slice(0,5).map(a=><a href={'#article/'+a.id} key={a.id}><Icon name="RightSmallCcmOutlined"/>{a.title}</a>)}</section></aside></div>:route.startsWith('article/')?<main className="not-found"><h1>这篇内容暂时找不到了</h1><button className="primary" onClick={()=>home()}>回到社区</button></main>:<main className="community-layout"><section className="feed" aria-label="社区文章"><div className="filter-bar"><div className="filter-track">{filters.map(f=><div className="filter-group" key={f.key} data-menu><button className={'filter-trigger '+(selections[f.key].length?'chosen':'')} aria-expanded={menu===f.key} onClick={()=>setMenu(menu===f.key?null:f.key)}>{f.label}<Icon name="DownSmallCcmOutlined"/>{selections[f.key].length>0&&<span className="filter-count">{selections[f.key].length}</span>}</button>{f.suggestions.map(v=><button className={'filter-suggestion '+(selections[f.key].includes(v)?'chosen':'')} key={v} onClick={()=>changeFilter(f.key,v)}>{v}</button>)}{menu===f.key&&<div className="filter-popover" role="group" aria-label={f.label+'筛选'}>{f.options.map(v=><label key={v}><input type="checkbox" checked={selections[f.key].includes(v)} onChange={()=>changeFilter(f.key,v)}/>{v}</label>)}<button className="filter-reset" onClick={()=>setSelections({...selections,[f.key]:[]})}>重置</button></div>}</div>)}</div><div className="sort-wrap" data-menu><button className="sort-button" aria-expanded={menu==='sort'} onClick={()=>setMenu(menu==='sort'?null:'sort')}><Icon name="SortOutlined"/>{sort}<Icon name="DownSmallCcmOutlined"/></button>{menu==='sort'&&<div className="sort-popover">{['最热','最新'].map(s=><button key={s} className={sort===s?'selected':''} onClick={()=>{setSort(s);setMenu(null)}}>按{s==='最热'?'热门':'最新'}排序{sort===s&&<span className="checkmark">✓</span>}</button>)}</div>}</div></div>{(activeFilters.length>0||search)&&<div className="filter-summary"><span>{search?'“'+search+'” 的搜索结果':'已筛选'} · {results.length} 篇</span>{activeFilters.map(t=><span key={t} className="selected-pill">{t}</span>)}<button onClick={()=>{setSelections(emptyFilters());setSearch('');setQuery('')}}>清空筛选</button></div>}<div className="article-list">{results.map(a=><Card a={a} key={a.id}/>)}</div>{!results.length&&<div className="empty-state"><Icon name="SearchOutlined"/><h2>暂时没有找到相关内容</h2><p>换个关键词，或减少一些筛选条件试试。</p><button className="secondary" onClick={()=>home()}>查看全部内容</button></div>}{results.length>0&&<div className="feed-end">你已经看完了，期待你的下一次分享</div>}</section><Sidebars/></main>}
- {modal?.type==='compose'&&<Composer close={()=>setModal(null)} onSubmit={d=>{const a={id:'local-'+Date.now(),title:d.title.trim(),summary:d.summary.trim()||d.body.trim().slice(0,150),body:d.body,author:0,date:'刚刚',tags:[d.type],cover:d.type==='案例与作品'?'build':'start',likes:0,saved:0,type:d.type==='案例与作品'?'作品':'教程',scene:'产品研发',rank:-1,stamp:Date.now()};setPosts([a,...posts]);setModal(null);home();notify('分享已添加到本地演示列表')}}/>}
- {modal?.type==='share'&&<Modal title="分享这篇内容" close={()=>setModal(null)}><div className="share-content"><img src={cover(modal.article)} alt=""/><h3>{modal.article.title}</h3><p className="muted">把这次发现，分享给一起创造的朋友。</p><div className="copy-row"><input aria-label="分享链接" readOnly value={location.origin+location.pathname+'#article/'+modal.article.id}/><button className="primary" onClick={async()=>{try{await navigator.clipboard.writeText(location.origin+location.pathname+'#article/'+modal.article.id);notify('链接已复制')}catch{notify('请选中链接手动复制')}}}>复制链接</button></div></div></Modal>}
- {modal?.type==='profile'&&<Modal title="社区创作者" close={()=>setModal(null)}><div className="profile-top"><Avatar author={modal.author} size={64}/><h2>{creators[modal.author].name}</h2><p>{creators[modal.author].bio}</p><div className="profile-stats"><span><strong>{creators[modal.author].saved}</strong>收藏量</span><span><strong>{creators[modal.author].likes}</strong>获赞</span></div><button className={following.includes(modal.author)?'secondary':'primary'} onClick={()=>toggle(modal.author,following,setFollowing)}>{following.includes(modal.author)?'已关注':'关注作者'}</button></div><div className="profile-posts"><h3>TA 的分享</h3>{all.filter(a=>a.author===modal.author).map(a=><button key={a.id} onClick={()=>{setModal(null);openArticle(a)}}>{a.title}<Icon name="RightSmallCcmOutlined"/></button>)}</div></Modal>}
- {modal?.type==='bookmarks'&&<Modal title="我的收藏" close={()=>setModal(null)}><div className="saved-list">{all.filter(a=>saved.includes(a.id)).map(a=><button key={a.id} onClick={()=>{setModal(null);openArticle(a)}}><img src={cover(a)} alt=""/><span>{a.title}</span><Icon name="RightSmallCcmOutlined"/></button>)}{!saved.length&&<div className="empty-state"><Icon name="CollectionOutlined"/><h3>把好内容留在这里</h3><p>点击文章下方的星标，就能随时回来查看。</p></div>}</div></Modal>}
- {toast&&<div className="toast" role="status">{toast}</div>}
- </>;
+import React, { useState, useRef, useMemo, useEffect } from "react";
+import { articles, courses, channels, events, prompts } from "./catalog.js";
+import { sections } from "./config.js";
+import { useCommunity, useRoute } from "./core/hooks.js";
+import { CommunityContext, ErrorBoundary, NotFound } from "./components/ui.jsx";
+import { Header } from "./components/Header.jsx";
+import { Dialogs } from "./components/Dialogs.jsx";
+import { Feed } from "./pages/Feed.jsx";
+import { Article } from "./pages/Article.jsx";
+import {
+  Home,
+  AI,
+  Prompt,
+  Courses,
+  Course,
+  Channels,
+  Channel,
+  Events,
+  Event,
+} from "./pages/Explore.jsx";
+import { Profile } from "./pages/Profile.jsx";
+const templates = {
+  home: Home,
+  ai: AI,
+  courses: Courses,
+  channels: Channels,
+  events: Events,
+  feed: Feed,
+};
+const detailPages = {
+  article: Article,
+  course: Course,
+  channel: Channel,
+  event: Event,
+  prompt: Prompt,
+  profile: Profile,
+  search: Feed,
+};
+export function App() {
+  const { state, dispatch, storageStatus } = useCommunity(),
+    route = useRoute();
+  const [modal, setModal] = useState(null),
+    [toast, setToast] = useState("");
+  const timer = useRef();
+  const all = useMemo(() => [...state.posts, ...articles], [state.posts]);
+  const config = sections.find((s) => s.id === route.page && s.enabled);
+  const Page =
+    detailPages[route.page] || templates[config?.template] || NotFound;
+  function notify(message) {
+    clearTimeout(timer.current);
+    setToast(message);
+    timer.current = setTimeout(() => setToast(""), 3000);
+  }
+  useEffect(() => () => clearTimeout(timer.current), []);
+  useEffect(() => {
+    setModal(null);
+    const item = {
+      article: all,
+      course: courses,
+      channel: channels,
+      event: events,
+      prompt: prompts,
+    }[route.page]?.find((x) => x.id === route.id);
+    document.title =
+      (item?.title ||
+        item?.name ||
+        config?.label ||
+        (route.page === "profile"
+          ? "个人中心"
+          : route.page === "search"
+            ? "搜索"
+            : "TRAE")) + " · TRAE 社区";
+  }, [route.page, route.id, config?.label, all]);
+  return (
+    <ErrorBoundary key={route.page}>
+      <CommunityContext.Provider
+        value={{ state, dispatch, storageStatus, all, modal, setModal, notify }}
+      >
+        <div id="page-shell">
+          <a
+            className="skip-link"
+            href="#main-content"
+            onClick={(e) => {
+              e.preventDefault();
+              document.getElementById("main-content")?.focus();
+            }}
+          >
+            跳到主要内容
+          </a>
+          <Header route={route} />
+          {storageStatus === "memory" && (
+            <div className="storage-warning" role="alert">
+              浏览器暂时无法保存数据。本次操作仍可使用，但刷新后可能丢失，请保留重要内容。
+            </div>
+          )}
+          <div id="main-content" tabIndex={-1}>
+            <Page key={route.page + "/" + (route.id || "")} route={route} />
+          </div>
+          <footer className="site-footer">
+            TRAE 社区体验原型 · 内容为演示数据 <span>让每一次创造被看见</span>
+          </footer>
+        </div>
+        <Dialogs modal={modal} setModal={setModal} />
+        {toast && (
+          <div className="toast" role="status">
+            {toast}
+          </div>
+        )}
+      </CommunityContext.Provider>
+    </ErrorBoundary>
+  );
 }
